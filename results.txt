@@ -1,0 +1,30 @@
+GeForce GTX TITAN (14 SMs)
+Using 1835008 vectors of length 32 each.
+Total GPU memory usage: 231 MB
+Multireduction (ms):         1.0498
+Previous best practice (ms): 2.9562
+Speedup:                     2.8160
+
+
+GeForce GTX 970M (10 SMs)
+Using 1310720 vectors of length 32 each.
+Total GPU memory usage: 165 MB
+Multireduction (ms):         1.6279
+Previous best practice (ms): 4.0743
+Speedup:                     2.5028
+
+
+GeForce GTX 980 (16 SMs)
+Using 2097152 vectors of length 32 each.
+Total GPU memory usage: 264 MB
+Multireduction (ms):         1.3531
+Previous best practice (ms): 3.6441
+Speedup:                     2.6932
+
+
+Quadro K620 ( 3 SMs)
+Using 393216 vectors of length 32 each.
+Total GPU memory usage: 49 MB
+Multireduction (ms):         2.1114
+Previous best practice (ms): 2.2363
+Speedup:                     1.0592
