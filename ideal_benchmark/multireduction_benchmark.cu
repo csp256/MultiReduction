@@ -5,13 +5,13 @@ using namespace std::chrono;
 
 #define _warpSize (32)
 #define intsPerVector (32)
-#define vectorsPerLoop (32)
+#define vectorsPerLoop (16)
 #define warpsPerBlock (8)
 #define loopsPerWarp (64)
 #define vectorsPerWarp (vectorsPerLoop * loopsPerWarp)
 #define vectorsPerBlock (vectorsPerWarp * warpsPerBlock)
 #define blocksPerSM (8)
-#define scale (1)
+#define scale (32 / vectorsPerLoop * 8 / blocksPerSM)
 
 template<typename T>
 __launch_bounds__(_warpSize * warpsPerBlock, blocksPerSM)
@@ -81,7 +81,7 @@ __launch_bounds__(_warpSize * warpsPerBlock, blocksPerSM)
 __global__ void
 add32_multi(const T *g_V, T *g_S)
 {
-	// T v[vectorsPerLoop];
+	T v[vectorsPerLoop];
 	int readOffset = (blockIdx.x  * intsPerVector * vectorsPerBlock)
 				   + (threadIdx.y * intsPerVector * vectorsPerWarp)
 				   + (threadIdx.x);
@@ -89,8 +89,8 @@ add32_multi(const T *g_V, T *g_S)
 	                + (threadIdx.y * vectorsPerWarp)
 					+ (threadIdx.x);
 		#pragma unroll
-		for (int loop = 0; loop < loopsPerWarp; loop++, writeOffset += vectorsPerLoop, readOffset += _warpSize*vectorsPerLoop) {
-		// for (int i = 0; i < vectorsPerLoop; i++, readOffset += _warpSize) v[i] = g_V[readOffset];
+		for (int loop = 0; loop < loopsPerWarp; loop++, writeOffset += vectorsPerLoop/*, readOffset += _warpSize*vectorsPerLoop*/) {
+		for (int i = 0; i < vectorsPerLoop; i++, readOffset += _warpSize) v[i] = g_V[readOffset];
 		// This blob of code can be emitted with the printMultiCode() function.
 		// Attempting to write the below code with a series of loops causes the kernel
 		//   to die in a fire on my machine (Ubuntu 15.10, GTX 970M, CUDA 7.5).
@@ -258,6 +258,7 @@ add32_multi(const T *g_V, T *g_S)
 		#endif
 		// End generated code.
 
+		/*
 			// ITERATIVE MULTIREDUCTION
 			T r[6];
 			{
@@ -449,11 +450,12 @@ add32_multi(const T *g_V, T *g_S)
 			if (threadIdx.x & 8) r[4] = r[3];
 			r[4] += __shfl_xor(r[4], 16);
 			if (threadIdx.x & 16) r[5] = r[4];
-		}
+			}
+		*/
 
 		if (threadIdx.x < vectorsPerLoop) {
-			g_S[writeOffset] = r[5];
-			// g_S[writeOffset] = v[0];
+			// g_S[writeOffset] = r[5];
+			g_S[writeOffset] = v[0];
 		}
 	}
 }
@@ -595,7 +597,8 @@ int main(int argc, char* argv[]) {
 	const int N = scale * vectorsPerLoop * loopsPerWarp * warpsPerBlock * blocksPerSM * SMs; // number of vectors
 	const int k = intsPerVector;
 	printf("Using %d vectors of length %d each.\n", N, k);
-	printf("Each SM is assigned %d blocks, and can run 8 at once.\n", blocksPerSM);
+	printf("Each SM is assigned %d / 8 blocks.\n", blocksPerSM);
+	printf("Vectors per loop: %d\n", vectorsPerLoop);
 
 	int ret = 0;
 	printf("\n-- Int\n");
