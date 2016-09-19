@@ -5,13 +5,13 @@ using namespace std::chrono;
 
 #define _warpSize (32)
 #define intsPerVector (32)
-#define vectorsPerLoop (16)
+#define vectorsPerLoop (32)
 #define warpsPerBlock (8)
 #define loopsPerWarp (64)
 #define vectorsPerWarp (vectorsPerLoop * loopsPerWarp)
 #define vectorsPerBlock (vectorsPerWarp * warpsPerBlock)
 #define blocksPerSM (8)
-#define scale (2)
+#define scale (1)
 
 template<typename T>
 __launch_bounds__(_warpSize * warpsPerBlock, blocksPerSM)
