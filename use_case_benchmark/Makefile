@@ -1,5 +1,5 @@
 EXECUTABLE_NAME=CUDAMATCH
-CC=g++-4.9
+CC=/usr/bin/g++-4.9
 NVCC=nvcc
 ARCH=sm_35
 INC=-I/usr/local/cuda/include/
