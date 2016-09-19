@@ -12,7 +12,7 @@ using namespace std::chrono;
 #define vectorsPerBlock (vectorsPerWarp * warpsPerBlock)
 #define blocksPerSM (8)
 #define scale (1)
- 
+
 template<typename T>
 __launch_bounds__(_warpSize * warpsPerBlock, blocksPerSM)
 __global__ void
@@ -81,7 +81,7 @@ __launch_bounds__(_warpSize * warpsPerBlock, blocksPerSM)
 __global__ void
 add32_multi(const T *g_V, T *g_S)
 {
-	T v[vectorsPerLoop];
+	// T v[vectorsPerLoop];
 	int readOffset = (blockIdx.x  * intsPerVector * vectorsPerBlock)
 				   + (threadIdx.y * intsPerVector * vectorsPerWarp)
 				   + (threadIdx.x);
@@ -89,8 +89,8 @@ add32_multi(const T *g_V, T *g_S)
 	                + (threadIdx.y * vectorsPerWarp)
 					+ (threadIdx.x);
 		#pragma unroll
-		for (int loop = 0; loop < loopsPerWarp; loop++, writeOffset += vectorsPerLoop/*, readOffset += _warpSize*vectorsPerLoop*/) {
-		for (int i = 0; i < vectorsPerLoop; i++, readOffset += _warpSize) v[i] = g_V[readOffset];
+		for (int loop = 0; loop < loopsPerWarp; loop++, writeOffset += vectorsPerLoop, readOffset += _warpSize*vectorsPerLoop) {
+		// for (int i = 0; i < vectorsPerLoop; i++, readOffset += _warpSize) v[i] = g_V[readOffset];
 		// This blob of code can be emitted with the printMultiCode() function.
 		// Attempting to write the below code with a series of loops causes the kernel
 		//   to die in a fire on my machine (Ubuntu 15.10, GTX 970M, CUDA 7.5).
@@ -258,9 +258,8 @@ add32_multi(const T *g_V, T *g_S)
 		#endif
 		// End generated code.
 
-		/*
 			// ITERATIVE MULTIREDUCTION
-			// T r[6];
+			T r[6];
 			{
 			// 0
 			r[0] = g_V[readOffset + 0];
@@ -450,11 +449,10 @@ add32_multi(const T *g_V, T *g_S)
 			if (threadIdx.x & 8) r[4] = r[3];
 			r[4] += __shfl_xor(r[4], 16);
 		}
-		*/
 
 		if (threadIdx.x < vectorsPerLoop) {
-			// g_S[writeOffset] = r[5];
-			g_S[writeOffset] = v[0];
+			g_S[writeOffset] = r[5];
+			// g_S[writeOffset] = v[0];
 		}
 	}
 }
