@@ -95,7 +95,7 @@ add32_multi(const T *g_V, T *g_S)
 		// Attempting to write the below code with a series of loops causes the kernel
 		//   to die in a fire on my machine (Ubuntu 15.10, GTX 970M, CUDA 7.5).
 		// I am told the concise approach might be fixed, or even preferable, on CUDA 8.
-		#if vectorsPerLoop == 320
+		#if vectorsPerLoop == -32
 			v[0] += __shfl_xor(v[0], 1);
 			v[1] += __shfl_xor(v[1], 1);
 			v[2] += __shfl_xor(v[2], 1);
@@ -258,27 +258,24 @@ add32_multi(const T *g_V, T *g_S)
 		#endif
 		// End generated code.
 
-		// ITERATIVE MULTIREDUCTION
-		// T r[6];
 		/*
-		{
+			// ITERATIVE MULTIREDUCTION
+			// T r[6];
+			{
 			// 0
 			r[0] = g_V[readOffset + 0];
 			r[0] += __shfl_xor(r[0], 1);
 			r[1] = r[0];
-
 			// 1
 			r[0] = g_V[readOffset + 32];
 			r[0] += __shfl_xor(r[0], 1);
 			if (threadIdx.x & 1) r[1] = r[0];
 			r[1] += __shfl_xor(r[1], 2);
 			r[2] = r[1];
-
 			// 2
 			r[0] = g_V[readOffset + 64];
 			r[0] += __shfl_xor(r[0], 1);
 			r[1] = r[0];
-
 			// 3
 			r[0] = g_V[readOffset + 96];
 			r[0] += __shfl_xor(r[0], 1);
@@ -287,24 +284,20 @@ add32_multi(const T *g_V, T *g_S)
 			if (threadIdx.x & 2) r[2] = r[1];
 			r[2] += __shfl_xor(r[2], 4);
 			r[3] = r[2];
-
 			// 4
 			r[0] = g_V[readOffset + 128];
 			r[0] += __shfl_xor(r[0], 1);
 			r[1] = r[0];
-
 			// 5
 			r[0] = g_V[readOffset + 160];
 			r[0] += __shfl_xor(r[0], 1);
 			if (threadIdx.x & 1) r[1] = r[0];
 			r[1] += __shfl_xor(r[1], 2);
 			r[2] = r[1];
-
 			// 6
 			r[0] = g_V[readOffset + 192];
 			r[0] += __shfl_xor(r[0], 1);
 			r[1] = r[0];
-
 			// 7
 			r[0] = g_V[readOffset + 224];
 			r[0] += __shfl_xor(r[0], 1);
@@ -315,24 +308,20 @@ add32_multi(const T *g_V, T *g_S)
 			if (threadIdx.x & 4) r[3] = r[2];
 			r[3] += __shfl_xor(r[3], 8);
 			r[4] = r[3];
-
 			// 8
 			r[0] = g_V[readOffset + 256];
 			r[0] += __shfl_xor(r[0], 1);
 			r[1] = r[0];
-
 			// 9
 			r[0] = g_V[readOffset + 288];
 			r[0] += __shfl_xor(r[0], 1);
 			if (threadIdx.x & 1) r[1] = r[0];
 			r[1] += __shfl_xor(r[1], 2);
 			r[2] = r[1];
-
 			// 10
 			r[0] = g_V[readOffset + 320];
 			r[0] += __shfl_xor(r[0], 1);
 			r[1] = r[0];
-
 			// 11
 			r[0] = g_V[readOffset + 352];
 			r[0] += __shfl_xor(r[0], 1);
@@ -341,24 +330,20 @@ add32_multi(const T *g_V, T *g_S)
 			if (threadIdx.x & 2) r[2] = r[1];
 			r[2] += __shfl_xor(r[2], 4);
 			r[3] = r[2];
-
 			// 12
 			r[0] = g_V[readOffset + 384];
 			r[0] += __shfl_xor(r[0], 1);
 			r[1] = r[0];
-
 			// 13
 			r[0] = g_V[readOffset + 416];
 			r[0] += __shfl_xor(r[0], 1);
 			if (threadIdx.x & 1) r[1] = r[0];
 			r[1] += __shfl_xor(r[1], 2);
 			r[2] = r[1];
-
 			// 14
 			r[0] = g_V[readOffset + 448];
 			r[0] += __shfl_xor(r[0], 1);
 			r[1] = r[0];
-
 			// 15
 			r[0] = g_V[readOffset + 480];
 			r[0] += __shfl_xor(r[0], 1);
@@ -371,24 +356,20 @@ add32_multi(const T *g_V, T *g_S)
 			if (threadIdx.x & 8) r[4] = r[3];
 			r[4] += __shfl_xor(r[4], 16);
 			r[5] = r[4];
-
 			// 16
 			r[0] = g_V[readOffset + 512];
 			r[0] += __shfl_xor(r[0], 1);
 			r[1] = r[0];
-
 			// 17
 			r[0] = g_V[readOffset + 544];
 			r[0] += __shfl_xor(r[0], 1);
 			if (threadIdx.x & 1) r[1] = r[0];
 			r[1] += __shfl_xor(r[1], 2);
 			r[2] = r[1];
-
 			// 18
 			r[0] = g_V[readOffset + 576];
 			r[0] += __shfl_xor(r[0], 1);
 			r[1] = r[0];
-
 			// 19
 			r[0] = g_V[readOffset + 608];
 			r[0] += __shfl_xor(r[0], 1);
@@ -397,24 +378,20 @@ add32_multi(const T *g_V, T *g_S)
 			if (threadIdx.x & 2) r[2] = r[1];
 			r[2] += __shfl_xor(r[2], 4);
 			r[3] = r[2];
-
 			// 20
 			r[0] = g_V[readOffset + 640];
 			r[0] += __shfl_xor(r[0], 1);
 			r[1] = r[0];
-
 			// 21
 			r[0] = g_V[readOffset + 672];
 			r[0] += __shfl_xor(r[0], 1);
 			if (threadIdx.x & 1) r[1] = r[0];
 			r[1] += __shfl_xor(r[1], 2);
 			r[2] = r[1];
-
 			// 22
 			r[0] = g_V[readOffset + 704];
 			r[0] += __shfl_xor(r[0], 1);
 			r[1] = r[0];
-
 			// 23
 			r[0] = g_V[readOffset + 736];
 			r[0] += __shfl_xor(r[0], 1);
@@ -425,24 +402,20 @@ add32_multi(const T *g_V, T *g_S)
 			if (threadIdx.x & 4) r[3] = r[2];
 			r[3] += __shfl_xor(r[3], 8);
 			r[4] = r[3];
-
 			// 24
 			r[0] = g_V[readOffset + 768];
 			r[0] += __shfl_xor(r[0], 1);
 			r[1] = r[0];
-
 			// 25
 			r[0] = g_V[readOffset + 800];
 			r[0] += __shfl_xor(r[0], 1);
 			if (threadIdx.x & 1) r[1] = r[0];
 			r[1] += __shfl_xor(r[1], 2);
 			r[2] = r[1];
-
 			// 26
 			r[0] = g_V[readOffset + 832];
 			r[0] += __shfl_xor(r[0], 1);
 			r[1] = r[0];
-
 			// 27
 			r[0] = g_V[readOffset + 864];
 			r[0] += __shfl_xor(r[0], 1);
@@ -451,23 +424,31 @@ add32_multi(const T *g_V, T *g_S)
 			if (threadIdx.x & 2) r[2] = r[1];
 			r[2] += __shfl_xor(r[2], 4);
 			r[3] = r[2];
-
 			// 28
 			r[0] = g_V[readOffset + 896];
 			r[0] += __shfl_xor(r[0], 1);
 			r[1] = r[0];
-
 			// 29
 			r[0] = g_V[readOffset + 928];
 			r[0] += __shfl_xor(r[0], 1);
 			if (threadIdx.x & 1) r[1] = r[0];
 			r[1] += __shfl_xor(r[1], 2);
 			r[2] = r[1];
-
 			// 30
 			r[0] = g_V[readOffset + 960];
 			r[0] += __shfl_xor(r[0], 1);
 			r[1] = r[0];
+			// 31
+			r[0] = g_V[readOffset + 992];
+			r[0] += __shfl_xor(r[0], 1);
+			if (threadIdx.x & 1) r[1] = r[0];
+			r[1] += __shfl_xor(r[1], 2);
+			if (threadIdx.x & 2) r[2] = r[1];
+			r[2] += __shfl_xor(r[2], 4);
+			if (threadIdx.x & 4) r[3] = r[2];
+			r[3] += __shfl_xor(r[3], 8);
+			if (threadIdx.x & 8) r[4] = r[3];
+			r[4] += __shfl_xor(r[4], 16);
 		}
 		*/
 
