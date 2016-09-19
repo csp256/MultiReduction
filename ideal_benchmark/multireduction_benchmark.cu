@@ -448,6 +448,7 @@ add32_multi(const T *g_V, T *g_S)
 			r[3] += __shfl_xor(r[3], 8);
 			if (threadIdx.x & 8) r[4] = r[3];
 			r[4] += __shfl_xor(r[4], 16);
+			if (threadIdx.x & 16) r[5] = r[4];
 		}
 
 		if (threadIdx.x < vectorsPerLoop) {
