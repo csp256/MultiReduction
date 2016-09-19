@@ -12,7 +12,7 @@ using namespace std::chrono;
 #define vectorsPerBlock (vectorsPerWarp * warpsPerBlock)
 #define blocksPerSM (8)
 #define scale (1)
-
+ 
 template<typename T>
 __launch_bounds__(_warpSize * warpsPerBlock, blocksPerSM)
 __global__ void
