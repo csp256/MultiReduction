@@ -5,7 +5,7 @@ using namespace std::chrono;
 
 #define _warpSize (32)
 #define intsPerVector (32)
-#define vectorsPerLoop (16)
+#define vectorsPerLoop (32)
 #define warpsPerBlock (8)
 #define loopsPerWarp (64)
 #define vectorsPerWarp (vectorsPerLoop * loopsPerWarp)
@@ -19,16 +19,18 @@ __global__ void
 add32_naive(const T *g_V, T *g_S)
 {
 	T v[vectorsPerLoop];
-	int readOffset = (blockIdx.x  * intsPerVector * vectorsPerBlock)
-				   + (threadIdx.y * intsPerVector * vectorsPerWarp)
+	int readOffset = (blockIdx.x  * vectorsPerBlock)
+				   + (threadIdx.y * vectorsPerWarp)
 				   + (threadIdx.x);
 	int writeOffset = (blockIdx.x  * vectorsPerBlock)
 	                + (threadIdx.y * vectorsPerWarp)
 					+ (threadIdx.x);
 	for (int loop = 0; loop < loopsPerWarp; loop++, writeOffset += vectorsPerLoop) {
 		#pragma unroll
-		for (int i = 0; i < vectorsPerLoop; i++, readOffset += _warpSize)
-			v[i] = g_V[readOffset];
+		for (int i = 0; i < vectorsPerLoop; i++, readOffset += 1/*_warpSize*/) {
+			// if (i == 1 && threadIdx.y == 0 && blockIdx.x == 0 && loop == 0) printf("^^ %d, %d\n", threadIdx.x, readOffset+i);
+			v[i] = g_V[readOffset/**//**/];
+		}
 		#pragma unroll
 		for (int j = 1; j < _warpSize; j <<= 1)
 			#pragma unroll
@@ -71,8 +73,12 @@ add32_naive(const T *g_V, T *g_S)
 			#endif
 		}
 
-		if (threadIdx.x < vectorsPerLoop)
+		// if (threadIdx.x <2 && blockIdx.x ==0 && threadIdx.y ==0) {
+		if (threadIdx.x < 32)
+			// if (loop < 100) printf("loop %d: %d %d\n", loop, writeOffset, v[0]);
+			// if (threadIdx.x == 1) printf("loop %d: %d %d\n", loop, writeOffset, v[0]);
 			g_S[writeOffset] = v[0];
+		// }
 	}
 }
 
@@ -81,16 +87,16 @@ __launch_bounds__(_warpSize * warpsPerBlock, blocksPerSM)
 __global__ void
 add32_multi(const T *g_V, T *g_S)
 {
-	T v[vectorsPerLoop];
-	int readOffset = (blockIdx.x  * intsPerVector * vectorsPerBlock)
-				   + (threadIdx.y * intsPerVector * vectorsPerWarp)
+	// T v[vectorsPerLoop];
+	int readOffset = (blockIdx.x  * vectorsPerBlock)
+				   + (threadIdx.y * vectorsPerWarp)
 				   + (threadIdx.x);
 	int writeOffset = (blockIdx.x  * vectorsPerBlock)
 	                + (threadIdx.y * vectorsPerWarp)
-					+ (threadIdx.x);
+					+ (threadIdx.x * 2);
 		#pragma unroll
-		for (int loop = 0; loop < loopsPerWarp; loop++, writeOffset += vectorsPerLoop/*, readOffset += _warpSize*vectorsPerLoop*/) {
-		for (int i = 0; i < vectorsPerLoop; i++, readOffset += _warpSize) v[i] = g_V[readOffset];
+		// for (int i = 0; i < vectorsPerLoop; i++, readOffset += _warpSize) v[i] = g_V[readOffset];
+		for (int loop = 0; loop < loopsPerWarp; loop+=2, writeOffset += 2*vectorsPerLoop/**/, readOffset += 2*_warpSize/*(_warpSize*vectorsPerLoop) & ((1<<11)-1)*/) {
 		// This blob of code can be emitted with the printMultiCode() function.
 		// Attempting to write the below code with a series of loops causes the kernel
 		//   to die in a fire on my machine (Ubuntu 15.10, GTX 970M, CUDA 7.5).
@@ -453,10 +459,380 @@ add32_multi(const T *g_V, T *g_S)
 			}
 		*/
 
-		if (threadIdx.x < vectorsPerLoop) {
-			// g_S[writeOffset] = r[5];
-			g_S[writeOffset] = v[0];
+		// Double iterative Multireduction
+//		/*
+		T r[6];
+		T s[6];
+		{
+			/*
+				I met a traveller from an antique land
+				Who said: Two vast and trunkless legs of stone
+				Stand in the desert. Near them, on the sand,
+				Half sunk, a shattered visage lies, whose frown,
+				And wrinkled lip, and sneer of cold command,
+				Tell that its sculptor well those passions read
+				Which yet survive, stamped on these lifeless things,
+				The hand that mocked them and the heart that fed:
+				And on the pedestal these words appear:
+				'My name is Ozymandias, king of kings:
+				Look on my works, ye Mighty, and despair!'
+				Nothing beside remains. Round the decay
+				Of that colossal wreck, boundless and bare
+				The lone and level sands stretch far away.
+						Percey Shelley's "Ozymandias"
+			*/
+			// 0
+			r[0] = g_V[readOffset + 0];
+			s[0] = g_V[readOffset + 1];
+			r[0] += __shfl_xor(r[0], 1);
+			s[0] += __shfl_xor(s[0], 1);
+			r[1] = r[0];
+			s[1] = s[0];
+			// 1
+			r[0] = g_V[readOffset + 2];
+			s[0] = g_V[readOffset + 3];
+			r[0] += __shfl_xor(r[0], 1);
+			s[0] += __shfl_xor(s[0], 1);
+			if (threadIdx.x & 1) r[1] = r[0];
+			if (threadIdx.x & 1) s[1] = s[0];
+			r[1] += __shfl_xor(r[1], 2);
+			s[1] += __shfl_xor(s[1], 2);
+			r[2] = r[1];
+			s[2] = s[1];
+			// 2
+			r[0] = g_V[readOffset + 4];
+			s[0] = g_V[readOffset + 5];
+			r[0] += __shfl_xor(r[0], 1);
+			s[0] += __shfl_xor(s[0], 1);
+			r[1] = r[0];
+			s[1] = s[0];
+			// 3
+			r[0] = g_V[readOffset + 6];
+			s[0] = g_V[readOffset + 7];
+			r[0] += __shfl_xor(r[0], 1);
+			s[0] += __shfl_xor(s[0], 1);
+			if (threadIdx.x & 1) r[1] = r[0];
+			if (threadIdx.x & 1) s[1] = s[0];
+			r[1] += __shfl_xor(r[1], 2);
+			s[1] += __shfl_xor(s[1], 2);
+			if (threadIdx.x & 2) r[2] = r[1];
+			if (threadIdx.x & 2) s[2] = s[1];
+			r[2] += __shfl_xor(r[2], 4);
+			s[2] += __shfl_xor(s[2], 4);
+			r[3] = r[2];
+			s[3] = s[2];
+			// 4
+			r[0] = g_V[readOffset + 8];
+			s[0] = g_V[readOffset + 9];
+			r[0] += __shfl_xor(r[0], 1);
+			s[0] += __shfl_xor(s[0], 1);
+			r[1] = r[0];
+			s[1] = s[0];
+			// 5
+			r[0] = g_V[readOffset + 10];
+			s[0] = g_V[readOffset + 11];
+			r[0] += __shfl_xor(r[0], 1);
+			s[0] += __shfl_xor(s[0], 1);
+			if (threadIdx.x & 1) r[1] = r[0];
+			if (threadIdx.x & 1) s[1] = s[0];
+			r[1] += __shfl_xor(r[1], 2);
+			s[1] += __shfl_xor(s[1], 2);
+			r[2] = r[1];
+			s[2] = s[1];
+			// 6
+			r[0] = g_V[readOffset + 12];
+			s[0] = g_V[readOffset + 13];
+			r[0] += __shfl_xor(r[0], 1);
+			s[0] += __shfl_xor(s[0], 1);
+			r[1] = r[0];
+			s[1] = s[0];
+			// 7
+			r[0] = g_V[readOffset + 14];
+			s[0] = g_V[readOffset + 15];
+			r[0] += __shfl_xor(r[0], 1);
+			s[0] += __shfl_xor(s[0], 1);
+			if (threadIdx.x & 1) r[1] = r[0];
+			if (threadIdx.x & 1) s[1] = s[0];
+			r[1] += __shfl_xor(r[1], 2);
+			s[1] += __shfl_xor(s[1], 2);
+			if (threadIdx.x & 2) r[2] = r[1];
+			if (threadIdx.x & 2) s[2] = s[1];
+			r[2] += __shfl_xor(r[2], 4);
+			s[2] += __shfl_xor(s[2], 4);
+			if (threadIdx.x & 4) r[3] = r[2];
+			if (threadIdx.x & 4) s[3] = s[2];
+			r[3] += __shfl_xor(r[3], 8);
+			s[3] += __shfl_xor(s[3], 8);
+			r[4] = r[3];
+			s[4] = s[3];
+			// 8
+			r[0] = g_V[readOffset + 16];
+			s[0] = g_V[readOffset + 17];
+			r[0] += __shfl_xor(r[0], 1);
+			s[0] += __shfl_xor(s[0], 1);
+			r[1] = r[0];
+			s[1] = s[0];
+			// 9
+			r[0] = g_V[readOffset + 18];
+			s[0] = g_V[readOffset + 19];
+			r[0] += __shfl_xor(r[0], 1);
+			s[0] += __shfl_xor(s[0], 1);
+			if (threadIdx.x & 1) r[1] = r[0];
+			if (threadIdx.x & 1) s[1] = s[0];
+			r[1] += __shfl_xor(r[1], 2);
+			s[1] += __shfl_xor(s[1], 2);
+			r[2] = r[1];
+			s[2] = s[1];
+			// 10
+			r[0] = g_V[readOffset + 20];
+			s[0] = g_V[readOffset + 21];
+			r[0] += __shfl_xor(r[0], 1);
+			s[0] += __shfl_xor(s[0], 1);
+			r[1] = r[0];
+			s[1] = s[0];
+			// 11
+			r[0] = g_V[readOffset + 22];
+			s[0] = g_V[readOffset + 23];
+			r[0] += __shfl_xor(r[0], 1);
+			s[0] += __shfl_xor(s[0], 1);
+			if (threadIdx.x & 1) r[1] = r[0];
+			if (threadIdx.x & 1) s[1] = s[0];
+			r[1] += __shfl_xor(r[1], 2);
+			s[1] += __shfl_xor(s[1], 2);
+			if (threadIdx.x & 2) r[2] = r[1];
+			if (threadIdx.x & 2) s[2] = s[1];
+			r[2] += __shfl_xor(r[2], 4);
+			s[2] += __shfl_xor(s[2], 4);
+			r[3] = r[2];
+			s[3] = s[2];
+			// 12
+			r[0] = g_V[readOffset + 24];
+			s[0] = g_V[readOffset + 25];
+			r[0] += __shfl_xor(r[0], 1);
+			s[0] += __shfl_xor(s[0], 1);
+			r[1] = r[0];
+			s[1] = s[0];
+			// 13
+			r[0] = g_V[readOffset + 26];
+			s[0] = g_V[readOffset + 27];
+			r[0] += __shfl_xor(r[0], 1);
+			s[0] += __shfl_xor(s[0], 1);
+			if (threadIdx.x & 1) r[1] = r[0];
+			if (threadIdx.x & 1) s[1] = s[0];
+			r[1] += __shfl_xor(r[1], 2);
+			s[1] += __shfl_xor(s[1], 2);
+			r[2] = r[1];
+			s[2] = s[1];
+			// 14
+			r[0] = g_V[readOffset + 28];
+			s[0] = g_V[readOffset + 29];
+			r[0] += __shfl_xor(r[0], 1);
+			s[0] += __shfl_xor(s[0], 1);
+			r[1] = r[0];
+			s[1] = s[0];
+			// 15
+			r[0] = g_V[readOffset + 30];
+			s[0] = g_V[readOffset + 31];
+			r[0] += __shfl_xor(r[0], 1);
+			s[0] += __shfl_xor(s[0], 1);
+			if (threadIdx.x & 1) r[1] = r[0];
+			if (threadIdx.x & 1) s[1] = s[0];
+			r[1] += __shfl_xor(r[1], 2);
+			s[1] += __shfl_xor(s[1], 2);
+			if (threadIdx.x & 2) r[2] = r[1];
+			if (threadIdx.x & 2) s[2] = s[1];
+			r[2] += __shfl_xor(r[2], 4);
+			s[2] += __shfl_xor(s[2], 4);
+			if (threadIdx.x & 4) r[3] = r[2];
+			if (threadIdx.x & 4) s[3] = s[2];
+			r[3] += __shfl_xor(r[3], 8);
+			s[3] += __shfl_xor(s[3], 8);
+			if (threadIdx.x & 8) r[4] = r[3];
+			if (threadIdx.x & 8) s[4] = s[3];
+			r[4] += __shfl_xor(r[4], 16);
+			s[4] += __shfl_xor(s[4], 16);
+			r[5] = r[4];
+			s[5] = s[4];
+			// 16
+			r[0] = g_V[readOffset + 32];
+			s[0] = g_V[readOffset + 33];
+			r[0] += __shfl_xor(r[0], 1);
+			s[0] += __shfl_xor(s[0], 1);
+			r[1] = r[0];
+			s[1] = s[0];
+			// 17
+			r[0] = g_V[readOffset + 34];
+			s[0] = g_V[readOffset + 35];
+			r[0] += __shfl_xor(r[0], 1);
+			s[0] += __shfl_xor(s[0], 1);
+			if (threadIdx.x & 1) r[1] = r[0];
+			if (threadIdx.x & 1) s[1] = s[0];
+			r[1] += __shfl_xor(r[1], 2);
+			s[1] += __shfl_xor(s[1], 2);
+			r[2] = r[1];
+			s[2] = s[1];
+			// 18
+			r[0] = g_V[readOffset + 36];
+			s[0] = g_V[readOffset + 37];
+			r[0] += __shfl_xor(r[0], 1);
+			s[0] += __shfl_xor(s[0], 1);
+			r[1] = r[0];
+			s[1] = s[0];
+			// 19
+			r[0] = g_V[readOffset + 38];
+			s[0] = g_V[readOffset + 39];
+			r[0] += __shfl_xor(r[0], 1);
+			s[0] += __shfl_xor(s[0], 1);
+			if (threadIdx.x & 1) r[1] = r[0];
+			if (threadIdx.x & 1) s[1] = s[0];
+			r[1] += __shfl_xor(r[1], 2);
+			s[1] += __shfl_xor(s[1], 2);
+			if (threadIdx.x & 2) r[2] = r[1];
+			if (threadIdx.x & 2) s[2] = s[1];
+			r[2] += __shfl_xor(r[2], 4);
+			s[2] += __shfl_xor(s[2], 4);
+			r[3] = r[2];
+			s[3] = s[2];
+			// 20
+			r[0] = g_V[readOffset + 40];
+			s[0] = g_V[readOffset + 41];
+			r[0] += __shfl_xor(r[0], 1);
+			s[0] += __shfl_xor(s[0], 1);
+			r[1] = r[0];
+			s[1] = s[0];
+			// 21
+			r[0] = g_V[readOffset + 42];
+			s[0] = g_V[readOffset + 43];
+			r[0] += __shfl_xor(r[0], 1);
+			s[0] += __shfl_xor(s[0], 1);
+			if (threadIdx.x & 1) r[1] = r[0];
+			if (threadIdx.x & 1) s[1] = s[0];
+			r[1] += __shfl_xor(r[1], 2);
+			s[1] += __shfl_xor(s[1], 2);
+			r[2] = r[1];
+			s[2] = s[1];
+			// 22
+			r[0] = g_V[readOffset + 44];
+			s[0] = g_V[readOffset + 45];
+			r[0] += __shfl_xor(r[0], 1);
+			s[0] += __shfl_xor(s[0], 1);
+			r[1] = r[0];
+			s[1] = s[0];
+			// 23
+			r[0] = g_V[readOffset + 46];
+			s[0] = g_V[readOffset + 47];
+			r[0] += __shfl_xor(r[0], 1);
+			s[0] += __shfl_xor(s[0], 1);
+			if (threadIdx.x & 1) r[1] = r[0];
+			if (threadIdx.x & 1) s[1] = s[0];
+			r[1] += __shfl_xor(r[1], 2);
+			s[1] += __shfl_xor(s[1], 2);
+			if (threadIdx.x & 2) r[2] = r[1];
+			if (threadIdx.x & 2) s[2] = s[1];
+			r[2] += __shfl_xor(r[2], 4);
+			s[2] += __shfl_xor(s[2], 4);
+			if (threadIdx.x & 4) r[3] = r[2];
+			if (threadIdx.x & 4) s[3] = s[2];
+			r[3] += __shfl_xor(r[3], 8);
+			s[3] += __shfl_xor(s[3], 8);
+			r[4] = r[3];
+			s[4] = s[3];
+			// 24
+			r[0] = g_V[readOffset + 48];
+			s[0] = g_V[readOffset + 49];
+			r[0] += __shfl_xor(r[0], 1);
+			s[0] += __shfl_xor(s[0], 1);
+			r[1] = r[0];
+			s[1] = s[0];
+			// 25
+			r[0] = g_V[readOffset + 50];
+			s[0] = g_V[readOffset + 51];
+			r[0] += __shfl_xor(r[0], 1);
+			s[0] += __shfl_xor(s[0], 1);
+			if (threadIdx.x & 1) r[1] = r[0];
+			if (threadIdx.x & 1) s[1] = s[0];
+			r[1] += __shfl_xor(r[1], 2);
+			s[1] += __shfl_xor(s[1], 2);
+			r[2] = r[1];
+			s[2] = s[1];
+			// 26
+			r[0] = g_V[readOffset + 52];
+			s[0] = g_V[readOffset + 53];
+			r[0] += __shfl_xor(r[0], 1);
+			s[0] += __shfl_xor(s[0], 1);
+			r[1] = r[0];
+			s[1] = s[0];
+			// 27
+			r[0] = g_V[readOffset + 54];
+			s[0] = g_V[readOffset + 55];
+			r[0] += __shfl_xor(r[0], 1);
+			s[0] += __shfl_xor(s[0], 1);
+			if (threadIdx.x & 1) r[1] = r[0];
+			if (threadIdx.x & 1) s[1] = s[0];
+			r[1] += __shfl_xor(r[1], 2);
+			s[1] += __shfl_xor(s[1], 2);
+			if (threadIdx.x & 2) r[2] = r[1];
+			if (threadIdx.x & 2) s[2] = s[1];
+			r[2] += __shfl_xor(r[2], 4);
+			s[2] += __shfl_xor(s[2], 4);
+			r[3] = r[2];
+			s[3] = s[2];
+			// 28
+			r[0] = g_V[readOffset + 56];
+			s[0] = g_V[readOffset + 57];
+			r[0] += __shfl_xor(r[0], 1);
+			s[0] += __shfl_xor(s[0], 1);
+			r[1] = r[0];
+			s[1] = s[0];
+			// 29
+			r[0] = g_V[readOffset + 58];
+			s[0] = g_V[readOffset + 59];
+			r[0] += __shfl_xor(r[0], 1);
+			s[0] += __shfl_xor(s[0], 1);
+			if (threadIdx.x & 1) r[1] = r[0];
+			if (threadIdx.x & 1) s[1] = s[0];
+			r[1] += __shfl_xor(r[1], 2);
+			s[1] += __shfl_xor(s[1], 2);
+			r[2] = r[1];
+			s[2] = s[1];
+			// 30
+			r[0] = g_V[readOffset + 60];
+			s[0] = g_V[readOffset + 61];
+			r[0] += __shfl_xor(r[0], 1);
+			s[0] += __shfl_xor(s[0], 1);
+			r[1] = r[0];
+			s[1] = s[0];
+			// 31
+			r[0] = g_V[readOffset + 62];
+			s[0] = g_V[readOffset + 63];
+			r[0] += __shfl_xor(r[0], 1);
+			s[0] += __shfl_xor(s[0], 1);
+			if (threadIdx.x & 1) r[1] = r[0];
+			if (threadIdx.x & 1) s[1] = s[0];
+			r[1] += __shfl_xor(r[1], 2);
+			s[1] += __shfl_xor(s[1], 2);
+			if (threadIdx.x & 2) r[2] = r[1];
+			if (threadIdx.x & 2) s[2] = s[1];
+			r[2] += __shfl_xor(r[2], 4);
+			s[2] += __shfl_xor(s[2], 4);
+			if (threadIdx.x & 4) r[3] = r[2];
+			if (threadIdx.x & 4) s[3] = s[2];
+			r[3] += __shfl_xor(r[3], 8);
+			s[3] += __shfl_xor(s[3], 8);
+			if (threadIdx.x & 8) r[4] = r[3];
+			if (threadIdx.x & 8) s[4] = s[3];
+			r[4] += __shfl_xor(r[4], 16);
+			s[4] += __shfl_xor(s[4], 16);
+			if (threadIdx.x & 16) r[5] = r[4];
+			if (threadIdx.x & 16) s[5] = s[4];
 		}
+//		*/
+
+		// if (threadIdx.x < 16) {
+			g_S[writeOffset    ] = r[5];
+			g_S[writeOffset + 1] = s[5];
+			// g_S[writeOffset] = v[0];
+		// }
 	}
 }
 
@@ -508,6 +884,33 @@ void check(const T * v, const T * s, const int size, const bool debug) {
 	if (bad != 0) printf("Good %d\nBad  %d\n", good, bad);
 }
 
+template <typename T>
+void check2(const T * v, const T * s, int size, bool debug) {
+	size /= _warpSize;
+	debug = false;
+	int good = 0;
+	int bad = 0;
+	T t = 0;
+	for (int i=0; i < _warpSize; i++) t += v[i];
+	for (int i=0, j=_warpSize; i < size; i++, j++) {
+		if (s[i] != t) {
+			bad++;
+			if (debug) {
+				if (i < 100) {
+					// if (i%32==0) printf("\n\n");
+					printf("%d: %d %d \n", i, (int)s[i], (int)t);
+				}
+			}
+		} else {
+			if (debug && i < 100) printf("                         %d: %d\n", i, (int)t);
+			good++;
+		}
+		t = t - v[i] + v[j];
+	}
+	if (bad != 0) printf("Good %d\nBad  %d\n", good, bad);
+	// for (int i=0; i<100; i++) printf(".. %d, %d\n", i, v[i]);
+}
+
 template<typename T>
 int test(int argc, char* argv[])
 {
@@ -522,13 +925,16 @@ int test(int argc, char* argv[])
 	const int SMs = props.multiProcessorCount;
 	const int N = scale * vectorsPerLoop * loopsPerWarp * warpsPerBlock * blocksPerSM * SMs; // number of vectors
 	const int k = intsPerVector;
-	size_t size = N * k * sizeof(T);
-	printf("Total GPU memory usage: %d MB\n", (int)((double)(size + size/k) / (1024*1024) ) );
+	size_t size = N * k * sizeof(T); // This is MUCH LARGER than it needs to be & corresponds to an earlier version.
+	printf("Total GPU memory usage: %d MB\n", (int)((double)(size + size/k) / (1024*1024) ) ); 	// But it hurts nothing.
 
 	T *h_V = (T *)malloc(size);
 	T *h_S = (T *)malloc(size/k);
 	for (int i = 0; i < N*k; ++i) {
 		h_V[i] = (T)(rand() & ((1 << 8)-1)); // Should have enough bits of precision for all types to get exact answers
+	}
+	for (int i = 0; i < N; i++) {
+		h_S[i] = 0;
 	}
 
 	T *d_V = NULL;
@@ -536,6 +942,7 @@ int test(int argc, char* argv[])
 	cudaMalloc((void **)&d_V, size);
 	cudaMalloc((void **)&d_S, size/k);
 	cudaMemcpy(d_V, h_V, size, cudaMemcpyHostToDevice);
+	cudaMemcpy(d_S, h_S, size/k, cudaMemcpyHostToDevice);
 
 	high_resolution_clock::time_point start, end;
 	dim3 threadsPerBlock(_warpSize, warpsPerBlock);
@@ -552,7 +959,13 @@ int test(int argc, char* argv[])
 	double t1 = static_cast<double>(duration_cast<nanoseconds>(end - start).count()) * 1e-9 / static_cast<double>(runs);
 	printf("Multireduction (ms):         %.4f\n", t1*1000);
 	cudaMemcpy(h_S, d_S, size/k, cudaMemcpyDeviceToHost);
-	check<T>(h_V, h_S, N*k, false);
+	check2<T>(h_V, h_S, N*k, true);
+
+	// Call me paranoid and inefficient.
+	for (int i = 0; i < N; i++) {
+		h_S[i] = 0;
+	}
+	cudaMemcpy(d_S, h_S, size/k, cudaMemcpyHostToDevice);
 
 	for (int i=0; i< warmups; i++)
 		add32_naive<T><<<blocksPerGrid, threadsPerBlock>>>(d_V, d_S);
@@ -576,7 +989,7 @@ int test(int argc, char* argv[])
 		fprintf(stderr, "Failed to copy sums from device to host (error code %s)!\n", cudaGetErrorString(err));
 		exit(EXIT_FAILURE);
 	}
-	check<T>(h_V, h_S, N*k, false);
+	check2<T>(h_V, h_S, N*k, true);
 
 	cudaFree(d_S);
 	cudaFree(d_V);
